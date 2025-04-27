@@ -1,21 +1,26 @@
 import React, { useEffect, useState } from "react";
-import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
+import { MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-markercluster";
 import { Icon, divIcon, point } from "leaflet";
 import axios from "axios";
 import "./App.css";
 import "leaflet/dist/leaflet.css";
 import { Client } from "@stomp/stompjs";
+import RouteMachine from "./config/RouteMachine";
 
 // Red icon for pending
 const redIcon = new Icon({
   iconUrl: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
   iconSize: [38, 38],
 });
-
 // Blue icon for in_transit
 const blueIcon = new Icon({
   iconUrl: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+  iconSize: [38, 38],
+});
+// Green icon for delivered
+const greenIcon = new Icon({
+  iconUrl: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
   iconSize: [38, 38],
 });
 
@@ -25,6 +30,12 @@ const deliveryIcon = new Icon({
   iconAnchor: [25, 50],
 });
 
+const warehouseIcon = new Icon({
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/3774/3774895.png",
+  iconSize: [50, 50],
+  iconAnchor: [25, 50],
+})
+
 const createClusterCustomIcon = function (cluster) {
   return new divIcon({
     html: `<span class="cluster-icon">${cluster.getChildCount()}</span>`,
@@ -33,14 +44,71 @@ const createClusterCustomIcon = function (cluster) {
   });
 };
 
+
+
+
 export default function App() {
   const [locations, setLocations] = useState([]);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [selectedRoute, setSelectedRoute] = useState(null);
+
+  useEffect(() => {
+    const client = new Client({
+      brokerURL: "wss://96.9.77.143:7001/loar-tinh/ws",
+      reconnectDelay: 5000,
+    } );
+  
+    client.onConnect = () => {
+      console.log("Connected to WebSocket");
+      client.subscribe("/topic/shipping", (message) => {
+        try {
+          const shippingData = JSON.parse(message.body);
+  
+          if (!shippingData?.shippingId || !shippingData?.status || !shippingData?.location) {
+            return;
+          }
+  
+          setLocations((prev) => {
+            const status = shippingData.status.toLowerCase().replace('_', ' ');
+            const currentDate = new Date();
+            const deliveredDate = new Date(shippingData.deliveredAt);
+            const existingIndex = prev.findIndex(loc => loc.shippingId === shippingData.shippingId);
+            
+            const showForOneDay = status === "delivered" && (currentDate - deliveredDate <= 24 * 60 * 60 * 1000); 
+            if (status === "delivered" && !showForOneDay) {
+              return prev.filter((loc) => loc.shippingId !== shippingData.shippingId);
+            }
+
+
+            if (existingIndex >= 0) {
+              const updated = [...prev];
+              updated[existingIndex] = {
+                ...shippingData,
+                status: status 
+              };
+              return updated;
+            } else {
+              return [{
+                ...shippingData,
+                status: status
+              }, ...prev];
+            }
+          });
+        } catch (error) {
+          console.error("Error processing WebSocket message:", error);
+        }
+      });
+    };
+  
+    client.activate();
+    return () => client.deactivate();
+  }, []);
 
   useEffect(() => {
     const fetchShippings = async () => {
       try {
         const response = await axios.get(
-          "http://localhost:9001/api/public/shippings"
+          "https://96.9.77.143:7001/loar-tinh/api/public/shippings"
         );
 
         const filtered = response.data.data.filter(
@@ -54,29 +122,29 @@ export default function App() {
     fetchShippings();
   }, []);
 
-  useEffect(() => {
-    const client = new Client({
-      brokerURL: "ws://localhost:9001/ws",
-      reconnectDelay: 5000,
-    });
-    client.onConnect = (frame) => {
-      // console.log("Connected: " + frame);
-      client.subscribe("/topic/shipping", (message) => {
-        const newShipping = JSON.parse(message.body);
-        setLocations((prev) => [newShipping, ...prev]);
-      });
-    };
+  const handleCurrentLocation = () =>{
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setCurrentLocation({ lat: latitude, lng: longitude });
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+        }
+      );
+    } else {
+      console.log('Geolocation is not supported by your browser');
+    }
+  }
 
-    client.activate();
-    return () => client.deactivate();
-  }, []);
   return (
     <>
       <div
         style={{
           position: "absolute",
-          top: "10px",
-          right: "10px",
+          top: "5rem",
+          left: "10px",
           zIndex: 1000,
           backgroundColor: "white",
           padding: "10px",
@@ -98,7 +166,7 @@ export default function App() {
           ></span>
           Pending
         </div>
-        <div>
+        <div style={{ marginBottom: "5px" }}>
           <span
             style={{
               display: "inline-block",
@@ -111,7 +179,40 @@ export default function App() {
           ></span>
           In Transit
         </div>
+        <div>
+          <span
+            style={{
+              display: "inline-block",
+              width: "12px",
+              height: "12px",
+              backgroundColor: "green",
+              borderRadius: "50%",
+              marginRight: "6px",
+            }}
+          ></span>
+          Delivered
+        </div>
       </div>
+      <button 
+      onClick={() => handleCurrentLocation()}
+      style={{
+        position: "absolute",
+        bottom: "5%",
+        right: "2%",
+        zIndex: 1000,
+        border: "none",
+        backgroundColor: "white",
+        paddingInline: "10px",
+        paddingTop: "10px",
+        borderRadius: "50%",
+        boxShadow: "0 0 10px rgba(0,0,0,0.2)",
+        fontSize: "2rem",
+        cursor: "pointer",
+      }}
+       >
+        <ion-icon name="navigate-circle-outline"></ion-icon>
+      </button>
+
       <MapContainer
         center={[11.530283383729236, 104.93863708561429]}
         zoom={13}
@@ -121,6 +222,18 @@ export default function App() {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        {currentLocation && (
+          <Marker position={[currentLocation.lat, currentLocation.lng]} icon={warehouseIcon}>
+            <Popup>
+              <b>My Warehouse</b>
+            </Popup>
+          </Marker>
+        )}
+
+        {selectedRoute && (
+          <RouteMachine from={selectedRoute.from} to={selectedRoute.to} />
+        )}
+
         <MarkerClusterGroup
           chunkedLoading
           iconCreateFunction={createClusterCustomIcon}
@@ -131,14 +244,30 @@ export default function App() {
               parseFloat(location.location.latitude),
               parseFloat(location.location.longitude),
             ];
-            const icon = status === "pending" ? redIcon : blueIcon;
-
+            const icon = status === "delivered" ? greenIcon : status === "pending" ? redIcon : blueIcon;
             return (
-              <Marker key={location.shippingId} position={position} icon={icon}>
+              <Marker 
+                key={location.shippingId} 
+                position={position} 
+                icon={icon}
+                eventHandlers={{
+                  click: (e) => {
+                    if (currentLocation) {
+                      setSelectedRoute({
+                        from: { lat: position[0], lng: position[1] },
+                        to: currentLocation,
+                      });
+                      e.target.openPopup();
+                    } else {
+                      console.log("Please set your current warehouse location first!");
+                    }
+                  }
+                }}
+              >
                 <Popup>
-                  <b>Tracking Number:</b> {location.trackingNumber} <br />
+                  <b>OrderNo:</b> {location.orderNo} <br />
                   <b>City: </b> {location.location.city} <br />
-                  <b>Status:</b> {status}
+                  <b>Status:</b> {status.toUpperCase()} <br />
                 </Popup>
               </Marker>
             );
