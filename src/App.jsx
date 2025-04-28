@@ -238,7 +238,9 @@ export default function App() {
           chunkedLoading
           iconCreateFunction={createClusterCustomIcon}
         >
-          {locations.map((location) => {
+          {locations
+          .filter((location) => location.location && location.location.latitude && location.location.longitude)
+          .map((location) => {
             const status = location.status.toLowerCase();
             const position = [
               parseFloat(location.location.latitude),
