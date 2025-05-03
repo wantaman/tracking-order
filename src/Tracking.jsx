@@ -5,8 +5,8 @@ import { Icon, divIcon, point } from "leaflet";
 import axios from "axios";
 import "./App.css";
 import "leaflet/dist/leaflet.css";
-import { Client } from "@stomp/stompjs";
 import RouteMachine from "./config/RouteMachine";
+import { Client } from "@stomp/stompjs";
 
 // Red icon for pending
 const redIcon = new Icon({
@@ -44,37 +44,34 @@ const createClusterCustomIcon = function (cluster) {
   });
 };
 
-
-
-
-export default function App() {
+export default function Tracking() {
   const [locations, setLocations] = useState([]);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [selectedRoute, setSelectedRoute] = useState(null);
 
   useEffect(() => {
     const client = new Client({
-      brokerURL: "wss://96.9.77.143:7001/loar-tinh/ws",
+      brokerURL: "ws://localhost:9001/ws",
       reconnectDelay: 5000,
-    } );
-  
+    });
+
     client.onConnect = () => {
       console.log("Connected to WebSocket");
       client.subscribe("/topic/shipping", (message) => {
         try {
           const shippingData = JSON.parse(message.body);
-  
+
           if (!shippingData?.shippingId || !shippingData?.status || !shippingData?.location) {
             return;
           }
-  
+
           setLocations((prev) => {
             const status = shippingData.status.toLowerCase().replace('_', ' ');
             const currentDate = new Date();
             const deliveredDate = new Date(shippingData.deliveredAt);
             const existingIndex = prev.findIndex(loc => loc.shippingId === shippingData.shippingId);
-            
-            const showForOneDay = status === "delivered" && (currentDate - deliveredDate <= 24 * 60 * 60 * 1000); 
+
+            const showForOneDay = status === "delivered" && (currentDate - deliveredDate <= 24 * 60 * 60 * 1000);
             if (status === "delivered" && !showForOneDay) {
               return prev.filter((loc) => loc.shippingId !== shippingData.shippingId);
             }
@@ -84,7 +81,7 @@ export default function App() {
               const updated = [...prev];
               updated[existingIndex] = {
                 ...shippingData,
-                status: status 
+                status: status
               };
               return updated;
             } else {
@@ -99,7 +96,7 @@ export default function App() {
         }
       });
     };
-  
+
     client.activate();
     return () => client.deactivate();
   }, []);
@@ -108,7 +105,7 @@ export default function App() {
     const fetchShippings = async () => {
       try {
         const response = await axios.get(
-          "https://96.9.77.143:7001/loar-tinh/api/public/shippings"
+          "http://localhost:9001/api/public/shippings"
         );
 
         const filtered = response.data.data.filter(
@@ -122,7 +119,8 @@ export default function App() {
     fetchShippings();
   }, []);
 
-  const handleCurrentLocation = () =>{
+
+  const handleCurrentLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -193,23 +191,23 @@ export default function App() {
           Delivered
         </div>
       </div>
-      <button 
-      onClick={() => handleCurrentLocation()}
-      style={{
-        position: "absolute",
-        bottom: "5%",
-        right: "2%",
-        zIndex: 1000,
-        border: "none",
-        backgroundColor: "white",
-        paddingInline: "10px",
-        paddingTop: "10px",
-        borderRadius: "50%",
-        boxShadow: "0 0 10px rgba(0,0,0,0.2)",
-        fontSize: "2rem",
-        cursor: "pointer",
-      }}
-       >
+      <button
+        onClick={() => handleCurrentLocation()}
+        style={{
+          position: "absolute",
+          bottom: "5%",
+          right: "2%",
+          zIndex: 1000,
+          border: "none",
+          backgroundColor: "white",
+          paddingInline: "10px",
+          paddingTop: "10px",
+          borderRadius: "50%",
+          boxShadow: "0 0 10px rgba(0,0,0,0.2)",
+          fontSize: "2rem",
+          cursor: "pointer",
+        }}
+      >
         <ion-icon name="navigate-circle-outline"></ion-icon>
       </button>
 
@@ -239,41 +237,55 @@ export default function App() {
           iconCreateFunction={createClusterCustomIcon}
         >
           {locations
-          .filter((location) => location.location && location.location.latitude && location.location.longitude)
-          .map((location) => {
-            const status = location.status.toLowerCase();
-            const position = [
-              parseFloat(location.location.latitude),
-              parseFloat(location.location.longitude),
-            ];
-            const icon = status === "delivered" ? greenIcon : status === "pending" ? redIcon : blueIcon;
-            return (
-              <Marker 
-                key={location.shippingId} 
-                position={position} 
-                icon={icon}
-                eventHandlers={{
-                  click: (e) => {
-                    if (currentLocation) {
-                      setSelectedRoute({
-                        from: { lat: position[0], lng: position[1] },
-                        to: currentLocation,
-                      });
+            // .filter((location) => location.location && location.location.latitude && location.location.longitude)
+            .map((location) => {
+              const status = location.status.toLowerCase();
+              const position = [
+                parseFloat(location.location.latitude),
+                parseFloat(location.location.longitude),
+              ];
+              const icon = status === "delivered" ? greenIcon : status === "pending" ? redIcon : blueIcon;
+              return (
+                <Marker
+                  key={location.shippingId}
+                  position={position}
+                  icon={icon}
+                  eventHandlers={{
+                    click: (e) => {
+
+                      if (!currentLocation) {
+                        console.log("Please set your current warehouse location first!");
+                        return;
+                      }
+
+                      if (selectedRoute &&
+                        selectedRoute.from.lat === position[0] &&
+                        selectedRoute.from.lng === position[1]) {
+                        setSelectedRoute(null);
+                      } else {
+
+                        setSelectedRoute({
+                          from: { lat: position[0], lng: position[1] },
+                          to: currentLocation,
+                        });
+                      }
                       e.target.openPopup();
-                    } else {
-                      console.log("Please set your current warehouse location first!");
                     }
-                  }
-                }}
-              >
-                <Popup>
-                  <b>OrderNo:</b> {location.orderNo} <br />
-                  <b>City: </b> {location.location.city} <br />
-                  <b>Status:</b> {status.toUpperCase()} <br />
-                </Popup>
-              </Marker>
-            );
-          })}
+                  }}
+                >
+                  <Popup>
+                    <b>OrderNo:</b> {location.orderNo} <br />
+                    <b>City: </b> {location.location.city} <br />
+                    <b>Status:</b> {status.toUpperCase()} <br />
+                    {location.deliveryAddress && (
+                      <>
+                        <b>Delivery Address:</b> {location.deliveryAddress} <br />
+                      </>
+                    )}
+                  </Popup>
+                </Marker>
+              );
+            })}
         </MarkerClusterGroup>
       </MapContainer>
     </>
