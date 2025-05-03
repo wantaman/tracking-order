@@ -239,7 +239,7 @@ export default function Tracking() {
           iconCreateFunction={createClusterCustomIcon}
         >
           {locations
-            // .filter((location) => location.location && location.location.latitude && location.location.longitude)
+            .filter((location) => location.location && location.location.latitude && location.location.longitude)
             .map((location) => {
               const status = location.status.toLowerCase();
               const position = [
