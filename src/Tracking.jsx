@@ -68,7 +68,9 @@ export default function Tracking() {
 
   useEffect(() => {
     const client = new Client({
-      brokerURL: "ws://localhost:9001/ws",
+      // brokerURL: "ws://localhost:9001/ws",
+      brokerURL: "wss://96.9.77.143:7001/loar-tinh/ws",
+
       reconnectDelay: 5000,
     });
 
@@ -144,8 +146,8 @@ export default function Tracking() {
     const fetchShippings = async () => {
       try {
         const response = await axios.get(
-          // "https://96.9.77.143:7001/loar-tinh/api/public/shippings",
-          "http://localhost:9001/api/public/shippings"
+          "https://96.9.77.143:7001/loar-tinh/api/public/shippings",
+          // "http://localhost:9001/api/public/shippings"
         );
 
         const filtered = response.data.data.filter(
