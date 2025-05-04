@@ -24,12 +24,6 @@ const greenIcon = new Icon({
   iconSize: [38, 38],
 });
 
-const deliveryIcon = new Icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/9018/9018802.png",
-  iconSize: [50, 50],
-  iconAnchor: [25, 50],
-});
-
 const warehouseIcon = new Icon({
   iconUrl: "https://cdn-icons-png.flaticon.com/512/3774/3774895.png",
   iconSize: [50, 50],
@@ -46,8 +40,31 @@ const createClusterCustomIcon = function (cluster) {
 
 export default function Tracking() {
   const [locations, setLocations] = useState([]);
+  const [activeDeliveries, setActiveDeliveries] = useState([]);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [selectedRoute, setSelectedRoute] = useState(null);
+
+
+  const shouldShowDelivered = (delivery) => {
+    if (delivery.status.toLowerCase() !== 'delivered') return true;
+    if (!delivery.createdDate) return false;
+    
+    const deliveredDate = new Date(delivery.createdDate);
+    const now = new Date();
+    const hoursSinceDelivery = (now - deliveredDate) / (1000 * 60 * 60);
+    
+    return hoursSinceDelivery <= 24;
+  };
+
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      setLocations(prev => prev.filter(shouldShowDelivered));
+      setActiveDeliveries(prev => prev.filter(shouldShowDelivered));
+    }, 3600000); 
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
+
 
   useEffect(() => {
     const client = new Client({
@@ -56,7 +73,8 @@ export default function Tracking() {
     });
 
     client.onConnect = () => {
-      console.log("Connected to WebSocket");
+      
+      // Subscrine to new order
       client.subscribe("/topic/shipping", (message) => {
         try {
           const shippingData = JSON.parse(message.body);
@@ -66,16 +84,13 @@ export default function Tracking() {
           }
 
           setLocations((prev) => {
-            const status = shippingData.status.toLowerCase().replace('_', ' ');
-            const currentDate = new Date();
-            const deliveredDate = new Date(shippingData.deliveredAt);
+            const status = shippingData.status.toLowerCase();
             const existingIndex = prev.findIndex(loc => loc.shippingId === shippingData.shippingId);
 
-            const showForOneDay = status === "delivered" && (currentDate - deliveredDate <= 24 * 60 * 60 * 1000);
-            if (status === "delivered" && !showForOneDay) {
-              return prev.filter((loc) => loc.shippingId !== shippingData.shippingId);
+            // Remove if delivered more than 24 hours ago
+            if (status === "delivered" && !shouldShowDelivered(shippingData)) {
+              return prev.filter((loc) => loc. shippingId !== shippingData.shippingId);
             }
-
 
             if (existingIndex >= 0) {
               const updated = [...prev];
@@ -95,6 +110,30 @@ export default function Tracking() {
           console.error("Error processing WebSocket message:", error);
         }
       });
+
+      // // Subscribe to real-time location updates for all active deliveries
+      // client.subscribe(`/topic/delivery/${trackingNumber}/location`, (message) => {
+      //   const update = JSON.parse(message.body);
+      //   console.log(update)
+        
+      //   setActiveDeliveries(prev => 
+      //     prev.map(delivery => 
+      //       delivery.trackingNumber === update.trackingNumber
+      //         ? { 
+      //             ...delivery, 
+      //             position: {
+      //               lat: parseFloat(update.latitude),
+      //               lng: parseFloat(update.longitude)
+      //             },
+      //             lastUpdated: update.timestamp,
+      //             speed: update.speed,
+      //             heading: update.heading
+      //           }
+      //         : delivery
+      //     )
+      //   );
+      // });
+
     };
 
     client.activate();
@@ -105,11 +144,12 @@ export default function Tracking() {
     const fetchShippings = async () => {
       try {
         const response = await axios.get(
+          // "https://96.9.77.143:7001/loar-tinh/api/public/shippings",
           "http://localhost:9001/api/public/shippings"
         );
 
         const filtered = response.data.data.filter(
-          (location) => location.status.toLowerCase() !== "delivered"
+          (location) => location.status.toLowerCase() !== "delivered" || shouldShowDelivered(location)
         );
         setLocations(filtered);
       } catch (error) {
@@ -229,7 +269,9 @@ export default function Tracking() {
         )}
 
         {selectedRoute && (
-          <RouteMachine from={selectedRoute.from} to={selectedRoute.to} />
+          <RouteMachine 
+          from={selectedRoute.from} 
+          to={selectedRoute.to} />
         )}
 
         <MarkerClusterGroup
@@ -237,7 +279,7 @@ export default function Tracking() {
           iconCreateFunction={createClusterCustomIcon}
         >
           {locations
-            // .filter((location) => location.location && location.location.latitude && location.location.longitude)
+            .filter((location) => location.location && location.location.latitude && location.location.longitude)
             .map((location) => {
               const status = location.status.toLowerCase();
               const position = [
@@ -245,6 +287,7 @@ export default function Tracking() {
                 parseFloat(location.location.longitude),
               ];
               const icon = status === "delivered" ? greenIcon : status === "pending" ? redIcon : blueIcon;
+
               return (
                 <Marker
                   key={location.shippingId}
@@ -277,11 +320,10 @@ export default function Tracking() {
                     <b>OrderNo:</b> {location.orderNo} <br />
                     <b>City: </b> {location.location.city} <br />
                     <b>Status:</b> {status.toUpperCase()} <br />
-                    {location.deliveryAddress && (
-                      <>
-                        <b>Delivery Address:</b> {location.deliveryAddress} <br />
-                      </>
+                    {status === 'delivered' && location.deliveredAt && (
+                      <><b>Delivered at:</b> {new Date(location.createdDate).toLocaleString()}<br /></>
                     )}
+                    
                   </Popup>
                 </Marker>
               );
