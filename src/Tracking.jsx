@@ -192,6 +192,12 @@ export default function Tracking() {
         const response = await axios.get(
           "https://96.9.77.143:7001/loar-tinh/api/public/shippings",
           // "http://localhost:9001/api/public/shippings"
+          {
+            params:{
+              size: 500
+            }
+          }
+          
         );
 
         const filtered = response.data.data.filter(
